@@ -126,7 +126,7 @@ void App_Env_Initialize(void)
 {
     /* Reset the application manager environment */
     memset(&app_env, 0, sizeof(app_env));
-
+    // ´´½¨task
     /* Create the application task handler */
     ke_task_create(TASK_APP, &TASK_DESC_APP);
 

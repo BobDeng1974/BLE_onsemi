@@ -68,10 +68,8 @@ void UART_Initialize(void)
     gNextData = 0;
 
     /* Configure TX and RX pin with correct current values */
-//    Sys_UART_DIOConfig(DIO_6X_DRIVE | DIO_WEAK_PULL_UP | DIO_LPF_ENABLE,
-//                       CFG_DIO_TXD_UART, CFG_DIO_RXD_UART);
-        Sys_UART_DIOConfig(DIO_2X_DRIVE | DIO_WEAK_PULL_UP | DIO_LPF_ENABLE,
-                           3, 2);
+    Sys_UART_DIOConfig(DIO_6X_DRIVE | DIO_WEAK_PULL_UP | DIO_LPF_ENABLE,
+                       CFG_DIO_TXD_UART, CFG_DIO_RXD_UART);
 
     /* Enable device UART port */
     Sys_UART_Enable(CFG_SYS_CLK, CFG_UART_BAUD_RATE, UART_DMA_MODE_ENABLE);
@@ -103,13 +101,17 @@ uint32_t UART_EmptyRXBuffer(uint8_t *data)
 
     /* Check if the start interrupt event occured and then setup the RX next
      * data pointer */
+    // 这里应该是开机第一次的时候来判断，开机的时候gNextData=0
     if (((Sys_DMA_Get_ChannelStatus(DMA_RX_NUM) & DMA_START_INT_STATUS) != 0) &&
         (gNextData == 0))
     {
         gNextData = DMA->DEST_BASE_ADDR[DMA_RX_NUM];
     }
+    // timeFlag在串口的定时器中设置为1，每20ms设置一次。
     else if (timerFlag == 0)
     {
+    	//timeFlag=0时，每次都更新temp的值，因为DMA的数据一直在增加，所以temp的值也在增加
+    	// timeFlag=1时，不更新temp的值，把数据取出来到data中
         temp = DMA->NEXT_DEST_ADDR[DMA_RX_NUM];
         if (gNextData < temp)
         {
@@ -128,6 +130,7 @@ uint32_t UART_EmptyRXBuffer(uint8_t *data)
          * (BUFFER_SIZE - 3*POLL_SIZE). POLL_SIZE represents bytes that can pile
          * up in between polls and '3*' is a safety factor in case the baud rate
          * isn't correct. */
+        // 查看size是否查过了最大值，没超过就不更新
         if (size < (BUFFER_SIZE - (3 * POLL_SIZE)))
         {
             return (0);
@@ -139,6 +142,7 @@ uint32_t UART_EmptyRXBuffer(uint8_t *data)
 
     /* If gNextData is not initialized or matches the next address location
      * to be written return a size of 0. */
+    // 接受长度为0，直接返回
     if (gNextData == temp)
     {
         return (0);
@@ -148,12 +152,14 @@ uint32_t UART_EmptyRXBuffer(uint8_t *data)
      * expected word size (8 bits) for UART transfers, and copy the received
      * words from the DMA buffer. Keep gNextData up to date as we read data from
      * the buffer so its set for the next time we enter this function */
+    // 取出数据
     if (gNextData < temp)
     {
         /* Handle copying out data that does not wrap around the end of the
          * buffer where the DMA is copying data to. */
-        size = (temp - gNextData) >> 2;
-
+        // 获得数据大小，因为是是4字节对齐，所以要除4.
+    	size = (temp - gNextData) >> 2;
+    	// 从DMA中取出数据，保存到data中
         for (i = 0; i < size; i++)
         {
             data[i] = *(uint8_t *)gNextData;
@@ -162,16 +168,20 @@ uint32_t UART_EmptyRXBuffer(uint8_t *data)
     }
     else
     {
+    	// 如果数据回环了，也就是数据超过了DMA地址的最大值，就又从最小的地址开始存数据
         /* Handle copying out data that wraps around the end of the
          * buffer where the DMA is copying data to. */
+    	// 计算大小
         size = (temp + ((BUFFER_SIZE << 2) - gNextData)) >> 2;
         temp = ((BUFFER_SIZE << 2) - (gNextData -
                                       DMA->DEST_BASE_ADDR[DMA_RX_NUM])) >> 2;
+        // 当前地址到DMA结尾的
         for (i = 0; i < temp; i++)
         {
             data[i] = *(uint8_t *)gNextData;
             gNextData = gNextData + 4;
         }
+        // 开头一部分的数据
         gNextData = DMA->DEST_BASE_ADDR[DMA_RX_NUM];
         if (size - temp > 0)
         {

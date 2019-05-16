@@ -79,7 +79,7 @@ void Device_Param_Prepare(app_device_param_t *param)
 void BLE_Initialize(void)
 {
     struct gapm_reset_cmd *cmd;
-
+    // 默认mac地址
     uint8_t default_addr[BDADDR_LENGTH] = PRIVATE_BDADDR;
 
     /* Seed the random number generator */
@@ -139,7 +139,7 @@ void BLE_Initialize(void)
     gapmConfigCmd =
         malloc(sizeof(struct gapm_set_dev_config_cmd));
     gapmConfigCmd->operation      = GAPM_SET_DEV_CONFIG;
-    gapmConfigCmd->role = GAP_ROLE_PERIPHERAL;
+    gapmConfigCmd->role = GAP_ROLE_PERIPHERAL;		// 作为蓝牙的外围设备工作，也就是client
     memcpy(gapmConfigCmd->addr.addr, bdaddr, BDADDR_LENGTH);
     gapmConfigCmd->addr_type = bdaddr_type;
     gapmConfigCmd->renew_dur = RENEW_DUR;
@@ -216,18 +216,18 @@ void Advertising_Start(void)
         cmd = KE_MSG_ALLOC(GAPM_START_ADVERTISE_CMD, TASK_GAPM, TASK_APP,
                            gapm_start_advertise_cmd);
         cmd->op.addr_src = GAPM_STATIC_ADDR;
-        cmd->channel_map = APP_ADV_CHMAP;
+        cmd->channel_map = APP_ADV_CHMAP;	// 广播信道
 
-        cmd->intv_min = APP_ADV_INT_MIN;
-        cmd->intv_max = APP_ADV_INT_MAX;
+        cmd->intv_min = APP_ADV_INT_MIN;	// 最大连接时间间隔
+        cmd->intv_max = APP_ADV_INT_MAX;	// 最小连接时间间隔
 
-        cmd->op.code = GAPM_ADV_UNDIRECT;
+        cmd->op.code = GAPM_ADV_UNDIRECT;	// 不定向的广播
         cmd->op.state = 0;
-        cmd->info.host.mode = GAP_GEN_DISCOVERABLE;
+        cmd->info.host.mode = GAP_GEN_DISCOVERABLE;		// 可发现的广播
         cmd->info.host.adv_filt_policy = 0;
 
         /* Set the scan response data */
-        cmd->info.host.scan_rsp_data_len = APP_SCNRSP_DATA_LEN;
+        cmd->info.host.scan_rsp_data_len = APP_SCNRSP_DATA_LEN;	// 数据长度
         memcpy(&cmd->info.host.scan_rsp_data[0],
                scan_rsp, cmd->info.host.scan_rsp_data_len);
 
@@ -235,12 +235,13 @@ void Advertising_Start(void)
          * 2 bytes are used for name length/flag */
         cmd->info.host.adv_data_len = 0;
         device_name_avail_space = (ADV_DATA_LEN - 3) - 2;
-
+        // 查看广播数据是否有空间
         /* Check if data can be added to the advertising data */
         if (device_name_avail_space > 0)
         {
+        	// 添加设备名称到广播数据中
             /* Add as much of the device name as possible */
-            device_name_length = strlen(APP_DFLT_DEVICE_NAME);
+            device_name_length = strlen(APP_DFLT_DEVICE_NAME);	// 广播名称“Peripheral_Server_UART”
             if (device_name_length > 0)
             {
                 /* Check available space */
@@ -252,7 +253,7 @@ void Advertising_Start(void)
                 /* Fill device name flag */
                 cmd->info.host.adv_data[cmd->info.host.adv_data_len + 1] =
                     APP_DEVICE_NAME_FLAG;
-
+                // 将名称保存
                 /* Copy device name */
                 memcpy(&cmd->info.host.adv_data[cmd->info.host.adv_data_len +
                                                 2],

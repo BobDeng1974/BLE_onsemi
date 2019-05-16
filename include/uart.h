@@ -54,8 +54,8 @@ extern uint8_t timerFlag;
 
 /* UART Parameters */
 #define CFG_SYS_CLK                     SystemCoreClock
-#define CFG_DIO_RXD_UART                4
-#define CFG_DIO_TXD_UART                5
+#define CFG_DIO_RXD_UART                1
+#define CFG_DIO_TXD_UART                0
 #define CFG_UART_BAUD_RATE              115200
 #define BUFFER_SIZE                     (PACKET_SIZE * 2)
 #define POLL_SIZE                       25

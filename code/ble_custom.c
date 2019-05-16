@@ -61,6 +61,7 @@ void CustomService_ServiceAdd(void)
                                                                         gattm_att_desc));
 
     uint8_t i;
+    // 用户自己定义的service的UUID
     const uint8_t svc_uuid[ATT_UUID_128_LEN] = CS_SVC_UUID;
 
     const struct gattm_att_desc att[CS_IDX_NB] =
@@ -73,19 +74,25 @@ void CustomService_ServiceAdd(void)
         /* TX Characteristic */
         /* TX Characteristic */
         [CS_IDX_TX_VALUE_CHAR]     = ATT_DECL_CHAR(),
+		// 用户自己定义service里面的属性的UUID， 权限，可读，并且是notify
         [CS_IDX_TX_VALUE_VAL]      = ATT_DECL_CHAR_UUID_128(CS_CHARACTERISTIC_TX_UUID,
                                                             PERM(RD, ENABLE) | PERM(NTF, ENABLE),
                                                             CS_TX_VALUE_MAX_LENGTH),
+		// CCC: client characteristic configuration, 可读，读出来的值是“Notifications enabled"
         [CS_IDX_TX_VALUE_CCC]      = ATT_DECL_CHAR_CCC(),
+		// characteristic User Description, 可读, 读取的值是"TX_VALUE"
         [CS_IDX_TX_VALUE_USR_DSCP] = ATT_DECL_CHAR_USER_DESC(CS_USER_DESCRIPTION_MAX_LENGTH),
 
         /* RX Characteristic */
         [CS_IDX_RX_VALUE_CHAR]     = ATT_DECL_CHAR(),
+		// 用户定义的service另外一个属性的UUID，具有读权限，写权限
         [CS_IDX_RX_VALUE_VAL]      = ATT_DECL_CHAR_UUID_128(CS_CHARACTERISTIC_RX_UUID,
                                                             PERM(RD, ENABLE)
                                                             | PERM(WRITE_REQ, ENABLE) | PERM(WRITE_COMMAND, ENABLE),
                                                             CS_RX_VALUE_MAX_LENGTH),
+		// 可读，值是"Notifications or indictions disabled"
         [CS_IDX_RX_VALUE_CCC]      = ATT_DECL_CHAR_CCC(),
+		// 可读，"RX_VALUE"
         [CS_IDX_RX_VALUE_USR_DSCP] = ATT_DECL_CHAR_USER_DESC(CS_USER_DESCRIPTION_MAX_LENGTH),
     };
 
@@ -131,7 +138,7 @@ int GATTM_AddSvcRsp(ke_msg_id_t const msg_id,
                     ke_task_id_t const src_id)
 {
     cs_env.start_hdl = param->start_hdl;
-
+    // 添加客户自己定义的service
     /* Add the next requested service  */
     if (!Service_Add())
     {
@@ -427,6 +434,7 @@ void CustomService_SendNotification(uint8_t conidx, uint8_t attidx,
     uint16_t handle = (attidx + cs_env.start_hdl + 1);
 
     /* Prepare a notification message for the specified attribute */
+    // 申请空间
     cmd = KE_MSG_ALLOC_DYN(GATTC_SEND_EVT_CMD,
                            KE_BUILD_ID(TASK_GATTC, conidx), TASK_APP,
                            gattc_send_evt_cmd,
@@ -438,7 +446,7 @@ void CustomService_SendNotification(uint8_t conidx, uint8_t attidx,
     memcpy(cmd->value, value, length);
 
     cs_env.sentSuccess = 0;
-
+    // 发送cmd消息到底层
     /* Send the message */
     ke_msg_send(cmd);
 }

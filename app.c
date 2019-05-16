@@ -30,7 +30,6 @@ int main(void)
 {
     uint32_t length;
     uint8_t temp[BUFFER_SIZE];
-
     /* Initialize the system */
     App_Initialize();
 
@@ -51,7 +50,7 @@ int main(void)
                 unhandled_packets = removeNode(unhandled_packets);
             }
         }
-
+        // 蓝牙连接上
         if (ble_env.state == APPM_CONNECTED)
         {
             if (app_env.send_batt_ntf && bass_support_env.enable)
@@ -63,12 +62,13 @@ int main(void)
             if (cs_env.sentSuccess)
             {
                 /* Copy data from the UART RX buffer to the TX buffer */
-                length = UART_EmptyRXBuffer(temp);
-                UART_FillTXBuffer(length, temp);
+                // 串口接收数据，保存到temp中，接收数据的长度是length
+            	length = UART_EmptyRXBuffer(temp);
                 if (length > 0)
                 {
                     /* Split buffer into two packets when it's greater than
                      * packet size */
+                	// 通过notify发送数据
                     if (length > PACKET_SIZE)
                     {
                         CustomService_SendNotification(ble_env.conidx,
