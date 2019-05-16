@@ -461,6 +461,8 @@ void CustomService_ServiceAdd(void)
 
 读写操作回调函数
 
+写操作，会将写过来的数据通过串口发送出去。
+
 ```
 #define CS_MESSAGE_HANDLER_LIST                                     \
     DEFINE_MESSAGE_HANDLER(GATTC_READ_REQ_IND, GATTC_ReadReqInd),   \
@@ -470,17 +472,27 @@ void CustomService_ServiceAdd(void)
 
 ble_custom.c
 
-int GATTC_ReadReqInd(ke_msg_id_t const msg_id,
-                     struct gattc_read_req_ind const *param,
-                     ke_task_id_t const dest_id,
-                     ke_task_id_t const src_id)
+int GATTC_WriteReqInd(ke_msg_id_t const msg_id,
+                      struct gattc_write_req_ind const *param,
+                      ke_task_id_t const dest_id,
+                      ke_task_id_t const src_id)
 {
-    uint8_t length = 0;
-    uint8_t status = GAP_ERR_NO_ERROR;
-    uint16_t attnum;
-    uint8_t *valptr = NULL;
+    struct gattc_write_cfm *cfm = KE_MSG_ALLOC(GATTC_WRITE_CFM,
+                                               KE_BUILD_ID(TASK_GATTC,
+                                                           ble_env.conidx),
+                                               TASK_APP, gattc_write_cfm);
 
-    struct gattc_read_cfm *cfm;
+    uint8_t status = GAP_ERR_NO_ERROR;
+    uint16_t attnum = 0;
+    uint8_t *valptr = NULL;
+    overflow_packet_t *traverse = NULL;
+    int flag;
+
+    /* Check that offset is not zero */
+    if (param->offset)
+    {
+        status = ATT_ERR_INVALID_OFFSET;
+    }
 
     /* Set the attribute handle using the attribute index
      * in the custom service */
@@ -493,82 +505,111 @@ int GATTC_ReadReqInd(ke_msg_id_t const msg_id,
         status = ATT_ERR_INVALID_HANDLE;
     }
 
-    /* If there is no error, send back the requested attribute value */
+    /* If there is no error, save the requested attribute value */
     if (status == GAP_ERR_NO_ERROR)
     {
         switch (attnum)
         {
             case CS_IDX_RX_VALUE_VAL:
             {
-                length = CS_RX_VALUE_MAX_LENGTH;
+            	Sys_GPIO_Toggle(7);
                 valptr = (uint8_t *)&cs_env.rx_value;
+                cs_env.rx_value_changed = 1;
             }
             break;
 
             case CS_IDX_RX_VALUE_CCC:
             {
-                length = 2;
+
                 valptr = (uint8_t *)&cs_env.rx_cccd_value;
-            }
-            break;
-
-            case CS_IDX_RX_VALUE_USR_DSCP:
-            {
-                length = strlen(CS_RX_CHARACTERISTIC_NAME);
-                valptr = (uint8_t *)CS_RX_CHARACTERISTIC_NAME;
-            }
-            break;
-
-            case CS_IDX_TX_VALUE_VAL:
-            {
-                length = CS_TX_VALUE_MAX_LENGTH;
-                valptr = (uint8_t *)&cs_env.tx_value;
             }
             break;
 
             case CS_IDX_TX_VALUE_CCC:
             {
-                length = 2;
                 valptr = (uint8_t *)&cs_env.tx_cccd_value;
             }
             break;
-
-            case CS_IDX_TX_VALUE_USR_DSCP:
-            {
-                length = strlen(CS_TX_CHARACTERISTIC_NAME);
-                valptr = (uint8_t *)CS_TX_CHARACTERISTIC_NAME;
-            }
-            break;
-
             default:
             {
-                status = ATT_ERR_READ_NOT_PERMITTED;
+                status = ATT_ERR_WRITE_NOT_PERMITTED;
             }
             break;
         }
     }
 
-    /* Allocate and build message */
-    cfm = KE_MSG_ALLOC_DYN(GATTC_READ_CFM,
-                           KE_BUILD_ID(TASK_GATTC, ble_env.conidx), TASK_APP,
-                           gattc_read_cfm,
-                           length);
-
     if (valptr != NULL)
     {
-        memcpy(cfm->value, valptr, length);
+        memcpy(valptr, param->value, param->length);
     }
 
     cfm->handle = param->handle;
-    cfm->length = length;
     cfm->status = status;
 
     /* Send the message */
     ke_msg_send(cfm);
 
+    if (attnum == CS_IDX_RX_VALUE_VAL)
+    {
+        flag = 0;
+
+        /* Start by trying to queue up any previously unhandled packets. If we
+         * can't queue them all, set a flag to indicate that we need to queue
+         * the new packet too. */
+        // 如果有没有处理的数据
+        while ((unhandled_packets != NULL) && (flag == 0))
+        {
+        	// 串口发送数据
+            if (UART_FillTXBuffer(unhandled_packets->length,
+                                  unhandled_packets->data) !=
+                UART_ERRNO_OVERFLOW)
+            {
+                /* Remove a successfully queued packet from the list of unqueued
+                 * packets. */
+            	// 处理完成，从链表中删除
+                unhandled_packets = removeNode(unhandled_packets);
+            }
+            else
+            {
+            	// 处理异常，还有数据没处理，把标志位置1
+                flag = 1;
+            }
+        }
+
+        /* If we don't have any (more) outstanding packets, attempt to queue the
+         * current packet. If this packet is successfully queued, exit. */
+        if (flag == 0)
+        {
+        	// 发送当前收到的数据
+            if (UART_FillTXBuffer(param->length, valptr) != UART_ERRNO_OVERFLOW)
+            {
+            	// 数据发送成功
+                return (KE_MSG_CONSUMED);
+            }
+        }
+        /* We couldn't empty the list or we couldn't queue the new packet. In
+         * both cases we need to save the current packet at the end of the list,
+         * then exit. */
+        // 数据没法成功，链表不为空
+        if (unhandled_packets != NULL)
+        {
+        	// 数据插入到链表最后
+            traverse = unhandled_packets;
+            while (traverse->next != NULL)
+            {
+                traverse = traverse->next;
+            }
+            traverse->next = createNode(param->length, valptr);
+        }
+        else
+        {
+        	//链表为空，数据没发送完，将数据放在链表头
+            unhandled_packets = createNode(param->length, valptr);
+        }
+    }
+
     return (KE_MSG_CONSUMED);
 }
-
 ```
 
 * 定时器任务
